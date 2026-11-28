@@ -176,3 +176,51 @@ def test_ambiguous_external_environment_is_unverified(tmp_path, customization):
     assert _resolve_python_site_packages(
         {"argv": [str(executable), "-m", "ipykernel_launcher"]}
     ) == (False, None)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX site-packages paths contain Python minors"
+)
+def test_kernel_checks_only_target_python_minor(tmp_path, monkeypatch):
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.delenv("PYTHONHOME", raising=False)
+    (tmp_path / "bin").mkdir()
+    executable = tmp_path / "bin" / "python"
+    executable.touch()
+    (tmp_path / "pyvenv.cfg").write_text("version = 3.12.0\ninclude-system-site-packages = false\n")
+    for minor, version in [("3.11", "1.0"), ("3.12", "2.0")]:
+        metadata = (
+            tmp_path
+            / "lib"
+            / f"python{minor}"
+            / "site-packages"
+            / f"example_package-{version}.dist-info"
+        )
+        metadata.mkdir(parents=True)
+        (metadata / "METADATA").write_text(f"Name: example-package\nVersion: {version}\n")
+    companions, has_issue = inspect_companions(
+        {
+            "jupyterlab": {
+                "discovery": {
+                    "kernel": [
+                        {
+                            "base": {"name": "example-package", "version": ">=2"},
+                            "kernel_spec": {"language": "python"},
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "python3": {
+                "spec": {
+                    "argv": [str(executable), "-m", "ipykernel_launcher"],
+                    "language": "python",
+                }
+            }
+        },
+    )
+    check = companions["kernel"][0]["checks"][0]
+    assert check["status"] == "ok"
+    assert check["installedVersion"] == "2.0"
+    assert not has_issue

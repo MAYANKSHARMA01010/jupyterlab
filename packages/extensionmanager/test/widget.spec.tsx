@@ -214,6 +214,112 @@ describe('@jupyterlab/extensionmanager', () => {
       expect(content).toContain('No matching kernels');
     });
 
+    it.each([
+      [undefined, '>=3'],
+      ['>=5', '>=5']
+    ])(
+      'should display effective companion requirements for check %s',
+      async (requiredVersion, expectedVersion) => {
+        const declaration = {
+          base: { name: 'example-package', version: '>=1' },
+          overrides: { pip: { name: 'example-pip-package', version: '>=3' } },
+          managers: []
+        };
+        model.customInstalled = [
+          {
+            ...INSTALLED[0],
+            companions: {
+              server: {
+                ...declaration,
+                check: requiredVersion
+                  ? {
+                      status: 'incompatible',
+                      installedVersion: '2',
+                      requiredVersion
+                    }
+                  : undefined
+              },
+              kernel: [
+                {
+                  ...declaration,
+                  kernel_spec: {},
+                  checks: requiredVersion
+                    ? [
+                        {
+                          kernelName: 'python3',
+                          displayName: 'Python',
+                          language: 'python',
+                          status: 'incompatible',
+                          installedVersion: '2',
+                          requiredVersion
+                        }
+                      ]
+                    : []
+                }
+              ]
+            }
+          }
+        ];
+        const content = await installedFor('');
+        expect(content).toContain(
+          `Server companion${requiredVersion ? ' mismatch' : ''}: example-package (${expectedVersion})`
+        );
+        expect(content).toContain(
+          `Kernel companion: example-package (${expectedVersion})`
+        );
+      }
+    );
+
+    it.each(['~=8.0', '===8.0'])(
+      'should explain unavailable conda commands for %s',
+      async version => {
+        const declaration = {
+          base: { name: 'example-package', version: '>=1' },
+          overrides: { conda: { name: 'example-conda-package', version } },
+          managers: ['conda']
+        };
+        model.customInstalled = [
+          {
+            ...INSTALLED[0],
+            companions: {
+              server: {
+                ...declaration,
+                check: { status: 'missing', installedVersion: null }
+              },
+              kernel: [{ ...declaration, kernel_spec: {}, checks: [] }]
+            }
+          }
+        ];
+        const content = await installedFor('');
+        expect(content.match(/Conda command unavailable/g)).toHaveLength(2);
+        expect(content).toContain('install a compatible version manually');
+        expect(
+          panel.node.querySelector('.jp-extensionmanager-companion-command')
+        ).toBeNull();
+      }
+    );
+
+    it('should preserve conda-specific names and versions', async () => {
+      model.customInstalled = [
+        {
+          ...INSTALLED[0],
+          companions: {
+            server: {
+              base: { name: 'example-package', version: '>=1' },
+              overrides: {
+                conda: { name: 'example-conda-package', version: '>=8,<9' }
+              },
+              managers: ['conda'],
+              check: { status: 'missing', installedVersion: null }
+            }
+          }
+        }
+      ];
+      expect(await installedFor('')).toContain(
+        'conda install -c conda-forge "example-conda-package>=8,<9"'
+      );
+    });
+
     it('should omit unsafe companion installation commands', async () => {
       model.customInstalled = [
         {
