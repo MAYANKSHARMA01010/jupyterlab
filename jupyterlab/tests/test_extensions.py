@@ -5,6 +5,7 @@ import asyncio
 import io
 import json
 import logging
+import os
 import sys
 import tarfile
 from importlib.metadata import Distribution, PackageNotFoundError, distributions
@@ -982,8 +983,14 @@ async def test_handler_blocks_uninstall_when_name_is_not_allowed():
 def _create_kernel_venv(tmp_path, name, packages):
     """Create a fake Python environment with dist-info metadata for kernelspec testing."""
     env_dir = tmp_path / name
+    env_dir.mkdir()
+    (env_dir / "pyvenv.cfg").write_text("include-system-site-packages = false\nversion = 3.12.0\n")
     bin_dir = env_dir / "bin"
-    site_packages = env_dir / "lib" / "python3.12" / "site-packages"
+    site_packages = (
+        env_dir / "Lib" / "site-packages"
+        if os.name == "nt"
+        else env_dir / "lib" / "python3.12" / "site-packages"
+    )
     bin_dir.mkdir(parents=True)
     site_packages.mkdir(parents=True)
     python_exe = bin_dir / "python"

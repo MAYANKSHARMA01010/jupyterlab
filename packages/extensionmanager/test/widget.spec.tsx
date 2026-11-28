@@ -318,7 +318,9 @@ describe('@jupyterlab/extensionmanager', () => {
       );
       expect(content).toContain('Clean Env: missing');
       expect(content).toContain('pip install "ipywidgets>=8.0.0,<9.0.0"');
-      expect(content).toContain('conda install -c conda-forge ipywidgets');
+      expect(content).toContain(
+        'conda install -c conda-forge "ipywidgets>=8.0.0,<9.0.0"'
+      );
     });
   });
 });

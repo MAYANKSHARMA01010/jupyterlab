@@ -539,6 +539,24 @@ such as `">=8.0.0,<9.0.0"`) lets the Extension Manager detect version drift
 between the frontend extension and its companion package in the server or local
 Python kernel environments.
 
+Each manager override inherits omitted fields from `base`. For Python
+distribution checks, the `pip` override takes precedence; its package name is
+not interchangeable with the base name.
+
+Kernel checks use the server's configured kernelspec manager and never execute
+kernel code. Local checks support the server interpreter and standard isolated
+Python virtual environments whose package search paths can be determined from
+disk. Custom provisioners or managers, launch scripts, environment overrides,
+inherited site packages, and path configuration files cannot be verified this
+way and are reported as **not verified**, rather than as missing or compatible.
+These checks describe the environment on disk, so a running kernel may still
+need restarting after its packages change.
+
+Suggested installation commands must be run manually in the appropriate server
+or kernel environment. Conda suggestions retain version constraints only when
+they can be expressed as a Conda requirement; unsupported constraints do not
+produce an unconstrained command.
+
 A typical setup for e.g. a jupyter-widget based package will then be:
 
 ```json

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import tornado
+from jupyter_core.utils import ensure_async
 from jupyterlab_server.translation_utils import translator
 from traitlets import Enum
 from traitlets.config import Configurable, LoggingConfigurable
@@ -92,7 +93,6 @@ class ExtensionPackage:
     allowed: bool = True
     approved: bool = False
     companion: str | None = None
-    companions: dict[str, Any] | None = None
     core: bool = False
     enabled: bool = False
     install: dict | None = None
@@ -106,6 +106,7 @@ class ExtensionPackage:
     documentation_url: str | None = None
     package_manager_url: str | None = None
     repository_url: str | None = None
+    companions: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -588,7 +589,7 @@ class ExtensionManager(PluginManager):
         build_check_info = _build_check_info(app_options)
         _ensure_compat_errors(info, app_options)
         extensions = {}
-        kernelspecs = self._get_companion_kernelspecs(info)
+        kernelspecs = await self._get_companion_kernelspecs(info)
 
         # TODO: the three for-loops below can be run concurrently
         for name, data in info["federated_extensions"].items():
@@ -719,7 +720,9 @@ class ExtensionManager(PluginManager):
         """
         return ExtensionManager.get_semver_version(data["version"])
 
-    def _get_companion_kernelspecs(self, info: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
+    async def _get_companion_kernelspecs(
+        self, info: dict[str, Any]
+    ) -> dict[str, dict[str, Any]] | None:
         all_ext_data = [
             *info["federated_extensions"].values(),
             *(
@@ -729,15 +732,23 @@ class ExtensionManager(PluginManager):
             ),
         ]
         needs_kernelspecs = any(
-            isinstance((d.get("jupyterlab") or {}).get("discovery"), dict)
-            and "kernel" in (d.get("jupyterlab") or {})["discovery"]
+            isinstance(metadata := d.get("jupyterlab"), dict)
+            and isinstance(discovery := metadata.get("discovery"), dict)
+            and "kernel" in discovery
             for d in all_ext_data
         )
-        return get_all_kernelspecs() if needs_kernelspecs else None
+        if not needs_kernelspecs:
+            return None
+        serverapp = getattr(self.parent, "serverapp", None)
+        manager = getattr(serverapp, "kernel_spec_manager", None)
+        return await ensure_async(
+            get_all_kernelspecs(manager) if manager is not None else get_all_kernelspecs()
+        )
 
     def _get_companion(self, data: dict) -> str | None:
         companion = None
-        discovery = (data.get("jupyterlab") or {}).get("discovery")
+        metadata = data.get("jupyterlab")
+        discovery = metadata.get("discovery") if isinstance(metadata, dict) else None
         if isinstance(discovery, dict):
             if "server" in discovery:
                 companion = "server"

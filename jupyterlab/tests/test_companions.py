@@ -3,12 +3,18 @@
 
 import sys
 from importlib.metadata import PackageNotFoundError
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
+from jupyter_client.kernelspec import KernelSpecManager
+from traitlets.config import Configurable
 
+from jupyterlab.extensions import ReadOnlyExtensionManager
 from jupyterlab.extensions.companions import (
     _check_version,
     _resolve_python_site_packages,
+    get_all_kernelspecs,
     inspect_companions,
 )
 from jupyterlab.extensions.manager import ExtensionPackage
@@ -97,3 +103,76 @@ def test_positional_extension_package_arguments_remain_compatible():
     package = ExtensionPackage("example", "", "", "prebuilt", True, False, None, True)
     assert package.core is True
     assert package.companions is None
+
+
+async def test_configured_kernel_manager_is_used(monkeypatch):
+    kernel_manager = KernelSpecManager()
+    kernel_manager.get_all_specs = lambda: {"configured": {"spec": {}}}
+    parent = Configurable()
+    monkeypatch.setattr(
+        parent, "serverapp", SimpleNamespace(kernel_spec_manager=kernel_manager), raising=False
+    )
+    manager = ReadOnlyExtensionManager(parent=parent)
+    specs = await manager._get_companion_kernelspecs(
+        {
+            "federated_extensions": {"example": {"jupyterlab": {"discovery": {"kernel": []}}}},
+            "extensions": {},
+            "shadowed_exts": [],
+        }
+    )
+    assert set(specs) == {"configured"}
+
+
+async def test_async_remote_kernel_manager_is_not_checked_locally(monkeypatch):
+    manager = SimpleNamespace(
+        get_all_specs=AsyncMock(
+            return_value={
+                "remote": {
+                    "spec": {
+                        "argv": [sys.executable, "-m", "ipykernel_launcher"],
+                        "language": "python",
+                    }
+                }
+            }
+        )
+    )
+    specs = await get_all_kernelspecs(manager)
+    monkeypatch.setattr(
+        "jupyterlab.extensions.companions._find_installed_version", lambda *a, **k: "1.0"
+    )
+    companions, has_issue = inspect_companions(
+        {
+            "jupyterlab": {
+                "discovery": {
+                    "kernel": [
+                        {"base": {"name": "example-package"}, "kernel_spec": {"language": "python"}}
+                    ]
+                }
+            }
+        },
+        specs,
+    )
+    assert companions["kernel"][0]["checks"][0]["status"] == "unknown"
+    assert not has_issue
+
+
+@pytest.mark.parametrize("customization", ["inherited", "pth", "multiple-versions", "no-config"])
+def test_ambiguous_external_environment_is_unverified(tmp_path, customization):
+    root = tmp_path / "env"
+    (root / "bin").mkdir(parents=True)
+    executable = root / "bin" / "python"
+    executable.touch()
+    site = root / "lib" / "python3.12" / "site-packages"
+    site.mkdir(parents=True)
+    config = root / "pyvenv.cfg"
+    if customization != "no-config":
+        config.write_text("version = 3.12.0\ninclude-system-site-packages = false\n")
+    if customization == "inherited":
+        config.write_text("version = 3.12.0\ninclude-system-site-packages = true\n")
+    elif customization == "pth":
+        (site / "extra.pth").write_text("/another/environment\n")
+    elif customization == "multiple-versions":
+        config.write_text("version = 3.13.0\ninclude-system-site-packages = false\n")
+    assert _resolve_python_site_packages(
+        {"argv": [str(executable), "-m", "ipykernel_launcher"]}
+    ) == (False, None)

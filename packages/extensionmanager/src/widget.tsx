@@ -72,12 +72,27 @@ function getCompanionInstallCommands(
       continue;
     }
     const version = pkg?.version ?? companion.base.version;
+    // These snippets are copied into a shell; metadata must remain a package requirement.
+    if (
+      !/^[a-z0-9][\w.-]*$/i.test(name) ||
+      (version && !/^[a-z0-9.*+!,<=>~ -]+$/i.test(version))
+    ) {
+      continue;
+    }
     if (manager === 'pip') {
       commands.push(
         version ? `pip install "${name}${version}"` : `pip install ${name}`
       );
-    } else if (manager === 'conda') {
-      commands.push(`conda install -c conda-forge ${name}`);
+    } else if (
+      manager === 'conda' &&
+      !version?.includes('~') &&
+      !version?.includes('===')
+    ) {
+      commands.push(
+        version
+          ? `conda install -c conda-forge "${name}${version}"`
+          : `conda install -c conda-forge ${name}`
+      );
     }
   }
   return commands;
@@ -124,8 +139,11 @@ function CompanionDetails(props: {
   }
 
   const renderServer = (server: IServerCompanion) => {
-    const target = formatCompanionTarget(server.base);
     const check = server.check;
+    const target = formatCompanionTarget({
+      ...server.base,
+      version: check?.requiredVersion ?? server.base.version
+    });
     const hasIssue = isCompanionIssue(check);
     const commands = hasIssue ? getCompanionInstallCommands(server) : [];
 
@@ -151,10 +169,11 @@ function CompanionDetails(props: {
                     target,
                     check.installedVersion
                   )
-                : trans.__('Server companion: %1', target)}
+                : trans.__('Server companion: %1 (not verified)', target)}
         </div>
         {commands.length > 0 && (
           <div className="jp-extensionmanager-companion-commands">
+            <div>{trans.__('Run in the server environment:')}</div>
             {commands.map(cmd => (
               <code key={cmd} className="jp-extensionmanager-companion-command">
                 {cmd}
@@ -167,7 +186,10 @@ function CompanionDetails(props: {
   };
 
   const renderKernel = (kernel: IKernelCompanion, index: number) => {
-    const target = formatCompanionTarget(kernel.base);
+    const target = formatCompanionTarget({
+      ...kernel.base,
+      version: kernel.checks?.[0]?.requiredVersion ?? kernel.base.version
+    });
     const checks = sortKernelChecks(kernel.checks ?? [], activeKernelNames);
     const hasIssue = checks.some(isCompanionIssue);
     const visibleChecks = checks.filter(
@@ -254,8 +276,14 @@ function CompanionDetails(props: {
             )}
           </div>
         )}
+        {checks.length === 0 && (
+          <div className="jp-extensionmanager-companion-unverified">
+            {trans.__('No matching kernels available; companion not verified.')}
+          </div>
+        )}
         {commands.length > 0 && (
           <div className="jp-extensionmanager-companion-commands">
+            <div>{trans.__('Run in the target kernel environment:')}</div>
             {commands.map(cmd => (
               <code key={cmd} className="jp-extensionmanager-companion-command">
                 {cmd}

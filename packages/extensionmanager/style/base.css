@@ -183,6 +183,7 @@
 
 .jp-extensionmanager-entry-companions {
   margin-top: 4px;
+  overflow-wrap: anywhere;
   font-size: var(--jp-ui-font-size0);
   color: var(--jp-ui-font-color2);
 }
@@ -192,7 +193,7 @@
 }
 
 .jp-extensionmanager-companion-warning {
-  color: var(--jp-warn-color0);
+  color: var(--jp-ui-font-color1);
 }
 
 .jp-extensionmanager-companion-ok {
@@ -206,17 +207,20 @@
 
 .jp-extensionmanager-companion-kernels {
   margin: 2px 0 0;
-  padding-left: 16px;
+  padding-inline-start: 16px;
 }
 
 .jp-extensionmanager-companion-commands {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
   margin-top: 2px;
 }
 
 .jp-extensionmanager-companion-command {
+  max-width: 100%;
+  box-sizing: border-box;
   font-family: var(--jp-code-font-family);
   font-size: var(--jp-code-font-size);
   background-color: var(--jp-layout-color2);
