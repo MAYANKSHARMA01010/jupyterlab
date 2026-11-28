@@ -60,6 +60,10 @@ function isProtocolAllowed(url: string): boolean {
   }
 }
 
+function isCondaVersionSupported(version?: string | null): boolean {
+  return !version?.includes('~') && !version?.includes('===');
+}
+
 function getCompanionInstallCommands(
   companion: Pick<IServerCompanion, 'base' | 'managers' | 'overrides'>
 ): string[] {
@@ -83,11 +87,7 @@ function getCompanionInstallCommands(
       commands.push(
         version ? `pip install "${name}${version}"` : `pip install ${name}`
       );
-    } else if (
-      manager === 'conda' &&
-      !version?.includes('~') &&
-      !version?.includes('===')
-    ) {
+    } else if (manager === 'conda' && isCondaVersionSupported(version)) {
       commands.push(
         version
           ? `conda install -c conda-forge "${name}${version}"`
@@ -138,11 +138,34 @@ function CompanionDetails(props: {
     return null;
   }
 
+  const renderCondaGuidance = (
+    companion: IServerCompanion | IKernelCompanion
+  ) => {
+    const version =
+      companion.overrides?.conda?.version ?? companion.base.version;
+    if (
+      !companion.managers.includes('conda') ||
+      isCondaVersionSupported(version)
+    ) {
+      return null;
+    }
+    return (
+      <div className="jp-extensionmanager-companion-unverified">
+        {trans.__(
+          'Conda command unavailable for this version requirement; use a supported package manager or install a compatible version manually.'
+        )}
+      </div>
+    );
+  };
+
   const renderServer = (server: IServerCompanion) => {
     const check = server.check;
     const target = formatCompanionTarget({
       ...server.base,
-      version: check?.requiredVersion ?? server.base.version
+      version:
+        check?.requiredVersion ??
+        server.overrides?.pip?.version ??
+        server.base.version
     });
     const hasIssue = isCompanionIssue(check);
     const commands = hasIssue ? getCompanionInstallCommands(server) : [];
@@ -181,6 +204,7 @@ function CompanionDetails(props: {
             ))}
           </div>
         )}
+        {hasIssue && renderCondaGuidance(server)}
       </div>
     );
   };
@@ -188,7 +212,10 @@ function CompanionDetails(props: {
   const renderKernel = (kernel: IKernelCompanion, index: number) => {
     const target = formatCompanionTarget({
       ...kernel.base,
-      version: kernel.checks?.[0]?.requiredVersion ?? kernel.base.version
+      version:
+        kernel.checks?.[0]?.requiredVersion ??
+        kernel.overrides?.pip?.version ??
+        kernel.base.version
     });
     const checks = sortKernelChecks(kernel.checks ?? [], activeKernelNames);
     const hasIssue = checks.some(isCompanionIssue);
@@ -291,6 +318,7 @@ function CompanionDetails(props: {
             ))}
           </div>
         )}
+        {showCommands && renderCondaGuidance(kernel)}
       </div>
     );
   };
