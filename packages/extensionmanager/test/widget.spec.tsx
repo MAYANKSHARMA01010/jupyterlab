@@ -42,8 +42,10 @@ const INSTALLED: IEntry[] = [
 ];
 
 class TestModel extends ListModel {
+  customInstalled: IEntry[] = INSTALLED;
+
   protected async fetchInstalled(): Promise<IEntry[]> {
-    return INSTALLED;
+    return this.customInstalled;
   }
 }
 
@@ -157,6 +159,81 @@ describe('@jupyterlab/extensionmanager', () => {
       expect(linkWhenEmpty).toContain('q=no-such-extension');
       expect(resultsShownWhenFound).toBe(true);
       expect(linkWhenFound).toContain(`q=${found.name}`);
+    });
+
+    it.each([
+      ['pip', '>=2,<3', 'pip install "example-package>=2,<3"'],
+      [
+        'conda',
+        '>=2,<3',
+        'conda install -c conda-forge "example-package>=2,<3"'
+      ]
+    ])(
+      'should preserve %s companion version requirements',
+      async (manager, version, command) => {
+        model.customInstalled = [
+          {
+            ...INSTALLED[0],
+            companions: {
+              server: {
+                base: { name: 'example-package', version },
+                managers: [manager],
+                check: { status: 'missing', installedVersion: null }
+              }
+            }
+          }
+        ];
+        expect(await installedFor('')).toContain(command);
+        expect(panel.node.textContent).toContain('server environment');
+      }
+    );
+
+    it('should explain unverified server and empty kernel checks', async () => {
+      model.customInstalled = [
+        {
+          ...INSTALLED[0],
+          companions: {
+            server: {
+              base: { name: 'example-server' },
+              managers: [],
+              check: { status: 'unknown', installedVersion: null }
+            },
+            kernel: [
+              {
+                base: { name: 'example-kernel' },
+                managers: [],
+                kernel_spec: {},
+                checks: []
+              }
+            ]
+          }
+        }
+      ];
+      const content = await installedFor('');
+      expect(content).toContain('not verified');
+      expect(content).toContain('No matching kernels');
+    });
+
+    it('should omit unsafe companion installation commands', async () => {
+      model.customInstalled = [
+        {
+          ...INSTALLED[0],
+          companions: {
+            server: {
+              base: {
+                name: 'example-package',
+                version: '$(touch /tmp/example)'
+              },
+              managers: ['pip'],
+              check: { status: 'missing', installedVersion: null }
+            }
+          }
+        }
+      ];
+      await installedFor('');
+      expect(
+        panel.node.querySelector('.jp-extensionmanager-companion-command')
+      ).toBeNull();
     });
 
     it('should display kernel and server companion warnings and install commands', async () => {
